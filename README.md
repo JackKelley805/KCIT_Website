@@ -55,6 +55,34 @@ The default service listens only on `127.0.0.1:3000`. Add the contents of
 `deploy/openresty-contact-api.conf` to the appropriate OpenResty/Nginx server
 block, then reload OpenResty.
 
+### Mailgun contact notifications
+
+Contact requests are saved under `/var/lib/kcit-site` and sent by email through
+Mailgun. Put the credentials in `/etc/kcit-site.env`; never add them to Git:
+
+```ini
+MAILGUN_API_KEY=key-your-private-api-key
+MAILGUN_DOMAIN=mg.your-domain.com
+MAILGUN_TO=you@example.com
+MAILGUN_FROM="Kelley Computers Website <website@mg.your-domain.com>"
+MAILGUN_API_BASE=https://api.mailgun.net
+```
+
+Use `https://api.eu.mailgun.net` for a Mailgun domain hosted in the EU region.
+When Nginx runs on another VM, also set `TRUSTED_PROXY_IPS` to that proxy VM's
+private IP so rate limiting uses each visitor's actual forwarded address:
+
+```ini
+TRUSTED_PROXY_IPS=192.168.1.20
+```
+
+After editing the settings, restart and inspect the service:
+
+```bash
+sudo systemctl restart kcit-site
+sudo journalctl -u kcit-site -n 50 --no-pager
+```
+
 ## Update Linux
 
 If a GitHub repository was configured during installation:

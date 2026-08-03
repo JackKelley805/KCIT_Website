@@ -270,13 +270,25 @@ async function submitContactForm({ form, status, storageKey }) {
     form.reset();
     localStorage.removeItem(storageKey);
   } catch (error) {
+    const errorMessage = error?.message || "Please try again or contact us directly.";
+    const requestWasSaved = errorMessage.startsWith("Your request was saved");
+
     setFormStatus(
       status,
       "error",
-      "Request was not saved.",
-      "Make sure this website can reach /api/contact."
+      requestWasSaved ? "Request saved, but email failed." : "Request was not saved.",
+      escapeHtml(errorMessage)
     );
   }
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 async function postContactPayload(payload) {

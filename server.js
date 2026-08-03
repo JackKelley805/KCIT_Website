@@ -11,6 +11,23 @@ const LEGACY_SUBMISSIONS_FILE = path.join(ROOT_DIR, "submissions", "contact-subm
 const BODY_LIMIT_BYTES = Number(process.env.BODY_LIMIT_BYTES || 16 * 1024);
 const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 10 * 60 * 1000);
 const RATE_LIMIT_MAX_SUBMISSIONS = Number(process.env.RATE_LIMIT_MAX_SUBMISSIONS || 5);
+const MAILGUN_API_KEY = String(process.env.MAILGUN_API_KEY || "").trim();
+const MAILGUN_DOMAIN = String(process.env.MAILGUN_DOMAIN || "").trim();
+const MAILGUN_TO = String(process.env.MAILGUN_TO || "").trim();
+const MAILGUN_FROM = String(
+  process.env.MAILGUN_FROM ||
+    (MAILGUN_DOMAIN ? `Kelley Computers Website <postmaster@${MAILGUN_DOMAIN}>` : "")
+).trim();
+const MAILGUN_API_BASE = normalizeMailgunApiBase(
+  process.env.MAILGUN_API_BASE || "https://api.mailgun.net"
+);
+const MAILGUN_TIMEOUT_MS = Number(process.env.MAILGUN_TIMEOUT_MS || 10 * 1000);
+const TRUSTED_PROXY_IPS = new Set(
+  String(process.env.TRUSTED_PROXY_IPS || "127.0.0.1,::1")
+    .split(",")
+    .map((address) => normalizeIpAddress(address))
+    .filter(Boolean)
+);
 const ALLOWED_SERVICES = new Set([
   "Business IT",
   "Managed Networks",
@@ -106,6 +123,11 @@ const server = http.createServer(async (request, response) => {
 server.listen(PORT, HOST, () => {
   console.log(`Kelley Computers site running at http://${HOST}:${PORT}`);
   console.log(`Contact submissions append to ${SUBMISSIONS_FILE}`);
+  console.log(
+    isMailgunConfigured()
+      ? `Mailgun notifications enabled for ${MAILGUN_TO}`
+      : "Mailgun notifications disabled: configure MAILGUN_API_KEY, MAILGUN_DOMAIN, and MAILGUN_TO."
+  );
 });
 
 async function handleContactSubmit(request, response, responseHeaders) {
@@ -138,8 +160,14 @@ async function handleContactSubmit(request, response, responseHeaders) {
     const entry = formatSubmission(record);
 
     await fs.promises.appendFile(SUBMISSIONS_FILE, entry, "utf8");
+    await sendContactEmail(record);
 
-    sendJson(response, 200, { ok: true, message: "Request saved." }, responseHeaders);
+    sendJson(
+      response,
+      200,
+      { ok: true, message: "Request saved and notification sent." },
+      responseHeaders
+    );
   } catch (error) {
     if (error instanceof SyntaxError) {
       sendJson(response, 400, { ok: false, error: "Invalid JSON payload." }, responseHeaders);
@@ -243,6 +271,97 @@ function formatSubmission(record) {
   return `${lines.join("\n")}\n`;
 }
 
+async function sendContactEmail(record) {
+  if (!isMailgunConfigured()) {
+    throw createHttpError(
+      503,
+      "Your request was saved, but email notifications are not configured. Please contact us directly."
+    );
+  }
+
+  const form = new URLSearchParams({
+    from: MAILGUN_FROM,
+    to: MAILGUN_TO,
+    subject: `[KCIT Website] ${record.service || "Contact request"} from ${record.name}`,
+    text: formatSubmissionEmail(record)
+  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), MAILGUN_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(
+      `${MAILGUN_API_BASE}/v3/${encodeURIComponent(MAILGUN_DOMAIN)}/messages`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from(`api:${MAILGUN_API_KEY}`).toString("base64")}`,
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: form.toString(),
+        signal: controller.signal
+      }
+    );
+
+    if (!response.ok) {
+      const responseText = (await response.text()).trim().slice(0, 500);
+      console.error(`Mailgun request failed (${response.status}): ${responseText}`);
+      throw createHttpError(
+        502,
+        "Your request was saved, but the notification email could not be sent. Please contact us directly."
+      );
+    }
+  } catch (error) {
+    if (error && typeof error.statusCode === "number") {
+      throw error;
+    }
+
+    console.error("Mailgun request failed:", error && error.message ? error.message : error);
+    throw createHttpError(
+      502,
+      "Your request was saved, but the notification email could not be sent. Please contact us directly."
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function formatSubmissionEmail(record) {
+  return [
+    "New Kelley Computers website contact request",
+    "",
+    `Submitted: ${record.submittedAt}`,
+    `Source page: ${record.page || "website"}`,
+    `Name: ${record.name}`,
+    `Occupation: ${record.occupation}`,
+    `Phone: ${record.phone}`,
+    `Company: ${record.company || "(blank)"}`,
+    `Service: ${record.service || "(blank)"}`,
+    "",
+    "Notes:",
+    record.notes || "(blank)"
+  ].join("\n");
+}
+
+function isMailgunConfigured() {
+  return Boolean(MAILGUN_API_KEY && MAILGUN_DOMAIN && MAILGUN_TO && MAILGUN_FROM);
+}
+
+function normalizeMailgunApiBase(value) {
+  const normalized = String(value || "").trim().replace(/\/+$/, "");
+
+  try {
+    const parsed = new URL(normalized);
+
+    if (parsed.protocol !== "https:" && parsed.hostname !== "127.0.0.1") {
+      throw new Error("Mailgun API base must use HTTPS.");
+    }
+
+    return parsed.toString().replace(/\/+$/, "");
+  } catch (error) {
+    throw new Error(`Invalid MAILGUN_API_BASE: ${error.message}`);
+  }
+}
+
 function toRequiredLine(value, fieldName, maxLength) {
   const cleaned = toCleanLine(value, maxLength);
 
@@ -309,7 +428,7 @@ function getApiAccess(request) {
     return { allowed: true, headers: buildCorsHeaders("null") };
   }
 
-  if (isLoopbackAddress(request.socket.remoteAddress || "")) {
+  if (isTrustedProxyAddress(request.socket.remoteAddress || "")) {
     return { allowed: true, headers: buildCorsHeaders("") };
   }
 
@@ -355,15 +474,31 @@ function getClientIp(request) {
   const socketAddress = request.socket.remoteAddress || "";
   const forwardedFor = String(request.headers["x-forwarded-for"] || "");
 
-  if (forwardedFor && isLoopbackAddress(socketAddress)) {
-    return forwardedFor.split(",")[0].trim() || "unknown";
+  if (forwardedFor && isTrustedProxyAddress(socketAddress)) {
+    const forwardedAddresses = forwardedFor
+      .split(",")
+      .map((address) => normalizeIpAddress(address))
+      .filter(Boolean);
+
+    return forwardedAddresses.at(-1) || "unknown";
   }
 
-  return socketAddress || "unknown";
+  return normalizeIpAddress(socketAddress) || "unknown";
 }
 
 function isLoopbackAddress(address) {
-  return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
+  const normalized = normalizeIpAddress(address);
+  return normalized === "127.0.0.1" || normalized === "::1";
+}
+
+function isTrustedProxyAddress(address) {
+  const normalized = normalizeIpAddress(address);
+  return isLoopbackAddress(normalized) || TRUSTED_PROXY_IPS.has(normalized);
+}
+
+function normalizeIpAddress(address) {
+  const normalized = String(address || "").trim();
+  return normalized.startsWith("::ffff:") ? normalized.slice(7) : normalized;
 }
 
 function initializeStorage() {
