@@ -22,7 +22,7 @@ New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
 $releaseItems = @(
     "assets", "styles", "scripts", "deploy",
     "index.html", "business-it.html", "managed-networks.html", "contact.html",
-    "contact-development.html", "under-development.html", "server.js", "package.json",
+    "contact-development.html", "under-development.html", "server.js", "package.json", "package-lock.json",
     "robots.txt", "sitemap.xml",
     "install.sh", "update.sh", "README.md"
 )

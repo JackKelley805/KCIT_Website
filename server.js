@@ -1,6 +1,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const nodemailer = require("nodemailer");
 
 const HOST = process.env.HOST || "0.0.0.0";
 const PORT = Number(process.env.PORT || 3000);
@@ -11,17 +12,15 @@ const LEGACY_SUBMISSIONS_FILE = path.join(ROOT_DIR, "submissions", "contact-subm
 const BODY_LIMIT_BYTES = Number(process.env.BODY_LIMIT_BYTES || 16 * 1024);
 const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 10 * 60 * 1000);
 const RATE_LIMIT_MAX_SUBMISSIONS = Number(process.env.RATE_LIMIT_MAX_SUBMISSIONS || 5);
-const MAILGUN_API_KEY = String(process.env.MAILGUN_API_KEY || "").trim();
-const MAILGUN_DOMAIN = String(process.env.MAILGUN_DOMAIN || "").trim();
-const MAILGUN_TO = String(process.env.MAILGUN_TO || "").trim();
-const MAILGUN_FROM = String(
-  process.env.MAILGUN_FROM ||
-    (MAILGUN_DOMAIN ? `Kelley Computers Website <postmaster@${MAILGUN_DOMAIN}>` : "")
-).trim();
-const MAILGUN_API_BASE = normalizeMailgunApiBase(
-  process.env.MAILGUN_API_BASE || "https://api.mailgun.net"
-);
-const MAILGUN_TIMEOUT_MS = Number(process.env.MAILGUN_TIMEOUT_MS || 10 * 1000);
+const SMTP_HOST = String(process.env.SMTP_HOST || "").trim();
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_SECURE = toBoolean(process.env.SMTP_SECURE, SMTP_PORT === 465);
+const SMTP_REQUIRE_TLS = toBoolean(process.env.SMTP_REQUIRE_TLS, SMTP_PORT !== 465);
+const SMTP_USER = String(process.env.SMTP_USER || "").trim();
+const SMTP_PASS = String(process.env.SMTP_PASS || "");
+const SMTP_TO = String(process.env.SMTP_TO || "").trim();
+const SMTP_FROM = String(process.env.SMTP_FROM || SMTP_USER).trim();
+const SMTP_TIMEOUT_MS = Number(process.env.SMTP_TIMEOUT_MS || 10 * 1000);
 const TRUSTED_PROXY_IPS = new Set(
   String(process.env.TRUSTED_PROXY_IPS || "127.0.0.1,::1")
     .split(",")
@@ -124,9 +123,9 @@ server.listen(PORT, HOST, () => {
   console.log(`Kelley Computers site running at http://${HOST}:${PORT}`);
   console.log(`Contact submissions append to ${SUBMISSIONS_FILE}`);
   console.log(
-    isMailgunConfigured()
-      ? `Mailgun notifications enabled for ${MAILGUN_TO}`
-      : "Mailgun notifications disabled: configure MAILGUN_API_KEY, MAILGUN_DOMAIN, and MAILGUN_TO."
+    isSmtpConfigured()
+      ? `SMTP notifications enabled for ${SMTP_TO}`
+      : "SMTP notifications disabled: configure SMTP_HOST, SMTP_USER, SMTP_PASS, and SMTP_TO."
   );
 });
 
@@ -272,56 +271,42 @@ function formatSubmission(record) {
 }
 
 async function sendContactEmail(record) {
-  if (!isMailgunConfigured()) {
+  if (!isSmtpConfigured()) {
     throw createHttpError(
       503,
       "Your request was saved, but email notifications are not configured. Please contact us directly."
     );
   }
 
-  const form = new URLSearchParams({
-    from: MAILGUN_FROM,
-    to: MAILGUN_TO,
-    subject: `[KCIT Website] ${record.service || "Contact request"} from ${record.name}`,
-    text: formatSubmissionEmail(record)
+  const transport = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_SECURE,
+    requireTLS: SMTP_REQUIRE_TLS,
+    auth: {
+      user: SMTP_USER,
+      pass: SMTP_PASS
+    },
+    connectionTimeout: SMTP_TIMEOUT_MS,
+    greetingTimeout: SMTP_TIMEOUT_MS,
+    socketTimeout: SMTP_TIMEOUT_MS
   });
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), MAILGUN_TIMEOUT_MS);
 
   try {
-    const response = await fetch(
-      `${MAILGUN_API_BASE}/v3/${encodeURIComponent(MAILGUN_DOMAIN)}/messages`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Basic ${Buffer.from(`api:${MAILGUN_API_KEY}`).toString("base64")}`,
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: form.toString(),
-        signal: controller.signal
-      }
-    );
-
-    if (!response.ok) {
-      const responseText = (await response.text()).trim().slice(0, 500);
-      console.error(`Mailgun request failed (${response.status}): ${responseText}`);
-      throw createHttpError(
-        502,
-        "Your request was saved, but the notification email could not be sent. Please contact us directly."
-      );
-    }
+    await transport.sendMail({
+      from: SMTP_FROM,
+      to: SMTP_TO,
+      subject: `[KCIT Website] ${record.service || "Contact request"} from ${record.name}`,
+      text: formatSubmissionEmail(record)
+    });
   } catch (error) {
-    if (error && typeof error.statusCode === "number") {
-      throw error;
-    }
-
-    console.error("Mailgun request failed:", error && error.message ? error.message : error);
+    console.error("SMTP delivery failed:", error && error.message ? error.message : error);
     throw createHttpError(
       502,
       "Your request was saved, but the notification email could not be sent. Please contact us directly."
     );
   } finally {
-    clearTimeout(timeout);
+    transport.close();
   }
 }
 
@@ -342,24 +327,16 @@ function formatSubmissionEmail(record) {
   ].join("\n");
 }
 
-function isMailgunConfigured() {
-  return Boolean(MAILGUN_API_KEY && MAILGUN_DOMAIN && MAILGUN_TO && MAILGUN_FROM);
+function isSmtpConfigured() {
+  return Boolean(SMTP_HOST && SMTP_PORT && SMTP_USER && SMTP_PASS && SMTP_TO && SMTP_FROM);
 }
 
-function normalizeMailgunApiBase(value) {
-  const normalized = String(value || "").trim().replace(/\/+$/, "");
-
-  try {
-    const parsed = new URL(normalized);
-
-    if (parsed.protocol !== "https:" && parsed.hostname !== "127.0.0.1") {
-      throw new Error("Mailgun API base must use HTTPS.");
-    }
-
-    return parsed.toString().replace(/\/+$/, "");
-  } catch (error) {
-    throw new Error(`Invalid MAILGUN_API_BASE: ${error.message}`);
+function toBoolean(value, defaultValue = false) {
+  if (value === undefined || value === null || value === "") {
+    return defaultValue;
   }
+
+  return /^(1|true|yes|on)$/i.test(String(value).trim());
 }
 
 function toRequiredLine(value, fieldName, maxLength) {

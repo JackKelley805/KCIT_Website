@@ -1,14 +1,20 @@
 {
   "name": "kcit-website",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "description": "Kelley Computers website and contact API",
   "scripts": {
     "start": "node server.js",
     "check": "node --check server.js",
-    "test": "node --test tests/contact-mailgun.test.js"
+    "test": "node --test tests/contact-smtp.test.js"
   },
   "engines": {
     "node": ">=18"
+  },
+  "dependencies": {
+    "nodemailer": "^9.0.3"
+  },
+  "devDependencies": {
+    "smtp-server": "^3.19.2"
   }
 }

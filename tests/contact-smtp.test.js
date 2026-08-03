@@ -5,33 +5,39 @@ const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
+const { SMTPServer } = require("smtp-server");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 
-test("contact requests are stored and sent through Mailgun", async (context) => {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "kcit-mailgun-test-"));
-  const receivedRequests = [];
-  const mailgunServer = http.createServer((request, response) => {
-    let body = "";
+test("contact requests are stored and sent through authenticated SMTP", async (context) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "kcit-smtp-test-"));
+  const receivedMessages = [];
+  const smtpServer = new SMTPServer({
+    allowInsecureAuth: true,
+    disabledCommands: ["STARTTLS"],
+    onAuth(auth, session, callback) {
+      if (auth.username !== "test-user" || auth.password !== "test-password") {
+        callback(new Error("Invalid test credentials"));
+        return;
+      }
 
-    request.setEncoding("utf8");
-    request.on("data", (chunk) => {
-      body += chunk;
-    });
-    request.on("end", () => {
-      receivedRequests.push({
-        authorization: request.headers.authorization,
-        body: new URLSearchParams(body),
-        method: request.method,
-        url: request.url
+      callback(null, { user: auth.username });
+    },
+    onData(stream, session, callback) {
+      let message = "";
+      stream.setEncoding("utf8");
+      stream.on("data", (chunk) => {
+        message += chunk;
       });
-      response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ id: "test-message", message: "Queued" }));
-    });
+      stream.on("end", () => {
+        receivedMessages.push({ envelope: session.envelope, message });
+        callback();
+      });
+    }
   });
 
-  await listen(mailgunServer);
-  const mailgunPort = mailgunServer.address().port;
+  await listenSmtp(smtpServer);
+  const smtpPort = smtpServer.server.address().port;
   const appPort = await getAvailablePort();
   const app = spawn(process.execPath, ["server.js"], {
     cwd: PROJECT_ROOT,
@@ -40,13 +46,16 @@ test("contact requests are stored and sent through Mailgun", async (context) => 
       ALLOWED_ORIGINS: `http://127.0.0.1:${appPort}`,
       DATA_DIR: dataDir,
       HOST: "127.0.0.1",
-      MAILGUN_API_BASE: `http://127.0.0.1:${mailgunPort}`,
-      MAILGUN_API_KEY: "test-key",
-      MAILGUN_DOMAIN: "mg.example.test",
-      MAILGUN_FROM: "Kelley Computers Website <website@mg.example.test>",
-      MAILGUN_TO: "owner@example.test",
       PORT: String(appPort),
-      RATE_LIMIT_MAX_SUBMISSIONS: "50"
+      RATE_LIMIT_MAX_SUBMISSIONS: "50",
+      SMTP_FROM: "Kelley Computers Website <website@example.test>",
+      SMTP_HOST: "127.0.0.1",
+      SMTP_PASS: "test-password",
+      SMTP_PORT: String(smtpPort),
+      SMTP_REQUIRE_TLS: "false",
+      SMTP_SECURE: "false",
+      SMTP_TO: "owner@example.test",
+      SMTP_USER: "test-user"
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -61,7 +70,7 @@ test("contact requests are stored and sent through Mailgun", async (context) => 
 
   context.after(async () => {
     app.kill();
-    await new Promise((resolve) => mailgunServer.close(resolve));
+    await closeSmtp(smtpServer);
     fs.rmSync(dataDir, { force: true, recursive: true });
   });
 
@@ -88,19 +97,14 @@ test("contact requests are stored and sent through Mailgun", async (context) => 
 
   assert.equal(response.status, 200);
   assert.equal(result.ok, true);
-  assert.equal(receivedRequests.length, 1);
+  assert.equal(receivedMessages.length, 1);
 
-  const mailgunRequest = receivedRequests[0];
-  assert.equal(mailgunRequest.method, "POST");
-  assert.equal(mailgunRequest.url, "/v3/mg.example.test/messages");
-  assert.equal(
-    mailgunRequest.authorization,
-    `Basic ${Buffer.from("api:test-key").toString("base64")}`
-  );
-  assert.equal(mailgunRequest.body.get("to"), "owner@example.test");
-  assert.match(mailgunRequest.body.get("subject"), /Managed Networks from Test Customer/);
-  assert.match(mailgunRequest.body.get("text"), /Phone: \(555\) 555-0123/);
-  assert.match(mailgunRequest.body.get("text"), /Please call about office Wi-Fi\./);
+  const delivered = receivedMessages[0];
+  assert.equal(delivered.envelope.mailFrom.address, "website@example.test");
+  assert.equal(delivered.envelope.rcptTo[0].address, "owner@example.test");
+  assert.match(delivered.message, /Managed Networks from Test Customer/);
+  assert.match(delivered.message, /Phone: \(555\) 555-0123/);
+  assert.match(delivered.message, /Please call about office Wi-Fi\./);
 
   const storedSubmission = fs.readFileSync(
     path.join(dataDir, "contact-submissions.txt"),
@@ -108,6 +112,17 @@ test("contact requests are stored and sent through Mailgun", async (context) => 
   );
   assert.match(storedSubmission, /Name: Test Customer/);
 });
+
+function listenSmtp(server) {
+  return new Promise((resolve, reject) => {
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+}
+
+function closeSmtp(server) {
+  return new Promise((resolve) => server.close(resolve));
+}
 
 function listen(server) {
   return new Promise((resolve, reject) => {

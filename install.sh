@@ -46,7 +46,7 @@ if [[ ${EUID} -ne 0 ]]; then
   exit 1
 fi
 
-for command in node systemctl install cp ln mktemp; do
+for command in node npm systemctl install cp ln mktemp; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "Required command not found: $command" >&2
     exit 1
@@ -88,7 +88,7 @@ install -d -o root -g root -m 0755 "$RELEASE_DIR"
 RELEASE_ITEMS=(
   assets styles scripts deploy
   index.html business-it.html managed-networks.html contact.html
-  contact-development.html under-development.html server.js package.json
+  contact-development.html under-development.html server.js package.json package-lock.json
   robots.txt sitemap.xml
   install.sh update.sh README.md
 )
@@ -104,6 +104,8 @@ if [[ -f "${SOURCE_DIR}/VERSION" ]]; then
 else
   printf '%s\n' "$RELEASE_ID" >"${RELEASE_DIR}/VERSION"
 fi
+
+npm ci --omit=dev --no-audit --no-fund --prefix "$RELEASE_DIR"
 
 find "$RELEASE_DIR" -type d -exec chmod 0755 {} +
 find "$RELEASE_DIR" -type f -exec chmod 0644 {} +
