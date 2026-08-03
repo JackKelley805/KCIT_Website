@@ -1,2 +1,0 @@
-Kelley Computers contact submissions
-This file is appended to by server.js when a contact form is submitted.

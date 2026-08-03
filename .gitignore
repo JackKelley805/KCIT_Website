@@ -1,0 +1,8 @@
+node_modules/
+release/
+*.zip
+.env
+
+# Contact requests are private runtime data and must never enter Git.
+submissions/*.txt
+kcit-private/

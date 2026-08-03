@@ -1,0 +1,22 @@
+[Unit]
+Description=Kelley Computers website and contact API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kcit-site
+Group=kcit-site
+WorkingDirectory=/opt/kcit-site/current
+EnvironmentFile=/etc/kcit-site.env
+ExecStart=/usr/bin/node /opt/kcit-site/current/server.js
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/kcit-site
+
+[Install]
+WantedBy=multi-user.target
