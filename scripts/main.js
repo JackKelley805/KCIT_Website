@@ -420,6 +420,78 @@ function setFormStatus(status, state, title, message = "") {
   status.innerHTML = `<strong>${title}</strong>${message ? `<span>${message}</span>` : ""}`;
 }
 
+function setupCarousels() {
+  document.querySelectorAll("[data-carousel]").forEach((carousel) => {
+    const slides = Array.from(carousel.querySelectorAll("[data-carousel-slide]"));
+    const previous = carousel.querySelector("[data-carousel-prev]");
+    const next = carousel.querySelector("[data-carousel-next]");
+
+    if (slides.length < 2 || !previous || !next) {
+      return;
+    }
+
+    let activeIndex = 0;
+    let pointerStartX = null;
+    const dots = document.createElement("div");
+    dots.className = "service-carousel__dots";
+
+    const dotButtons = slides.map((slide, index) => {
+      const dot = document.createElement("button");
+      dot.type = "button";
+      dot.className = "service-carousel__dot";
+      dot.setAttribute("aria-label", `Show photo ${index + 1} of ${slides.length}`);
+      dot.addEventListener("click", () => showSlide(index));
+      dots.append(dot);
+      return dot;
+    });
+
+    carousel.append(dots);
+    carousel.tabIndex = 0;
+    carousel.setAttribute("aria-roledescription", "carousel");
+
+    const showSlide = (index) => {
+      activeIndex = (index + slides.length) % slides.length;
+      slides.forEach((slide, slideIndex) => {
+        const isActive = slideIndex === activeIndex;
+        slide.classList.toggle("is-active", isActive);
+        slide.setAttribute("aria-hidden", String(!isActive));
+      });
+      dotButtons.forEach((dot, dotIndex) => {
+        const isActive = dotIndex === activeIndex;
+        dot.classList.toggle("is-active", isActive);
+        dot.setAttribute("aria-current", isActive ? "true" : "false");
+      });
+    };
+
+    previous.addEventListener("click", () => showSlide(activeIndex - 1));
+    next.addEventListener("click", () => showSlide(activeIndex + 1));
+    carousel.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        showSlide(activeIndex + (event.key === "ArrowLeft" ? -1 : 1));
+      }
+    });
+    carousel.addEventListener("pointerdown", (event) => {
+      pointerStartX = event.clientX;
+    });
+    carousel.addEventListener("pointerup", (event) => {
+      if (pointerStartX === null) {
+        return;
+      }
+      const distance = event.clientX - pointerStartX;
+      pointerStartX = null;
+      if (Math.abs(distance) > 45) {
+        showSlide(activeIndex + (distance < 0 ? 1 : -1));
+      }
+    });
+    carousel.addEventListener("pointercancel", () => {
+      pointerStartX = null;
+    });
+
+    showSlide(0);
+  });
+}
+
 function setupScrollFade() {
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const targets = Array.from(document.querySelectorAll([
@@ -616,5 +688,6 @@ function connectionColor(firstTone, secondTone, opacity) {
 injectSiteChrome();
 setupNavigation();
 setupContactForm();
+setupCarousels();
 setupScrollFade();
 setupInteractiveBackground();
