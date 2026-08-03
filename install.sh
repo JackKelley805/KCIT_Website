@@ -89,6 +89,7 @@ RELEASE_ITEMS=(
   assets styles scripts deploy
   index.html business-it.html managed-networks.html contact.html
   contact-development.html under-development.html server.js package.json
+  robots.txt sitemap.xml
   install.sh update.sh README.md
 )
 

@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /contact-development
+Disallow: /under-development
+Disallow: /deploy/
+Disallow: /submissions/
+
+Sitemap: https://kelleycomputers-it.com/sitemap.xml

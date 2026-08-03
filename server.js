@@ -27,7 +27,9 @@ const CONTENT_TYPES = {
   ".json": "application/json; charset=utf-8",
   ".png": "image/png",
   ".svg": "image/svg+xml; charset=utf-8",
-  ".webp": "image/webp"
+  ".txt": "text/plain; charset=utf-8",
+  ".webp": "image/webp",
+  ".xml": "application/xml; charset=utf-8"
 };
 
 const PAGE_ALIASES = {
@@ -41,6 +43,7 @@ const PAGE_ALIASES = {
 };
 
 const PUBLIC_PAGE_FILES = new Set(Object.values(PAGE_ALIASES));
+const PUBLIC_ROOT_FILES = new Set(["/robots.txt", "/sitemap.xml"]);
 const PUBLIC_PATH_PREFIXES = ["/assets/", "/scripts/", "/styles/"];
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://kelleycomputers-it.com",
@@ -448,7 +451,7 @@ function normalizePublicPath(urlPath) {
 }
 
 function isPublicPath(publicPath) {
-  if (PUBLIC_PAGE_FILES.has(publicPath)) {
+  if (PUBLIC_PAGE_FILES.has(publicPath) || PUBLIC_ROOT_FILES.has(publicPath)) {
     return true;
   }
 
