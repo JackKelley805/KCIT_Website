@@ -68,7 +68,7 @@ function injectSiteChrome() {
           <div class="site-footer__inner site-footer__inner--development">
             <div class="footer-copy footer-copy--development">
               <strong>Kelley Computers</strong>
-              <span>IT support for business systems, people, and networks.</span>
+              <span>Basic business IT support and managed networks.</span>
               <span>&copy; ${new Date().getFullYear()}</span>
             </div>
           </div>
@@ -80,7 +80,7 @@ function injectSiteChrome() {
           <div class="site-footer__inner">
             <div class="footer-copy">
               <strong>Kelley Computers </strong>
-              <span>IT support for business systems, people, and networks.</span>
+              <span>Basic business IT support and managed networks.</span>
             </div>
             <div class="footer-links">
               <span>&copy; ${new Date().getFullYear()}</span>
