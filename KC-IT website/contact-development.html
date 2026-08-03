@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Contact Kelley Computers | Website Under Development</title>
+  <meta
+    name="description"
+    content="Contact Kelley Computers while the website is under development."
+  >
+  <link rel="icon" type="image/png" href="assets/kc_logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap"
+    rel="stylesheet"
+  >
+  <link rel="stylesheet" href="styles/main.css">
+  <script src="scripts/main.js" defer></script>
+</head>
+<body data-page="development-contact">
+  <canvas class="site-canvas" aria-hidden="true"></canvas>
+  <div data-site-header></div>
+
+  <main class="page-content">
+    <section class="section page-hero">
+      <div class="page-hero-grid">
+        <div class="page-hero-copy">
+          <h1>Leave your details and we will follow up.</h1>
+          <p class="lead">
+            The website is still under development, but the form below is available for new inquiries.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="contact-grid">
+        <form class="panel contact-form" data-contact-form novalidate>
+          <div class="section-heading section-heading--compact">
+            <p class="eyebrow">Contact form</p>
+            <h2>Request a callback</h2>
+          </div>
+
+          <div class="form-grid">
+            <label class="field">
+              <span>Name</span>
+              <input type="text" name="name" autocomplete="name" placeholder="Your full name" required>
+            </label>
+
+            <label class="field">
+              <span>Occupation</span>
+              <input type="text" name="occupation" placeholder="Owner, office manager, IT lead..." required>
+            </label>
+
+            <label class="field">
+              <span>Phone number</span>
+              <input
+                type="tel"
+                name="phone"
+                inputmode="tel"
+                autocomplete="tel"
+                placeholder="(555) 123-4567"
+                pattern="^[0-9+() -]{7,}$"
+                required
+              >
+            </label>
+
+            <label class="field">
+              <span>Service needed</span>
+              <select name="service">
+                <option value="Business IT">Business IT</option>
+                <option value="Managed Networks">Managed Networks</option>
+                <option value="Business IT + Managed Networks">Business IT + Managed Networks</option>
+              </select>
+            </label>
+
+            <label class="field field--full">
+              <span>Notes</span>
+              <textarea name="notes" rows="5" placeholder="What would you like help with?"></textarea>
+            </label>
+          </div>
+
+          <div class="form-actions">
+            <button class="button button--primary" type="submit">Submit request</button>
+          </div>
+
+          <div class="form-status" data-form-status hidden></div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <div data-site-footer></div>
+</body>
+</html>
